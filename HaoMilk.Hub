@@ -1,0 +1,229 @@
+-- LocalScript — Cinematic Intro + Select Client UI + Blur + Launch Script + Panel + Cancel
+-- Author: kcap Touch (xD)  
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+
+local player = Players.LocalPlayer
+local DISPLAY_NAME = player.DisplayName or player.Name
+
+local MADE_BY = "Kcaptain_oni"
+local AVATAR_USER = "kcaptain_oni"
+local HOLD_MADE_BY = 2.8
+local HOLD_WELCOME = 1.6
+local BLUR_INTENSITY = 20
+local URL_AUTOWALK = "https://raw.githubusercontent.com/Kcaptainoni/Autowalk/refs/heads/main/autowalkv1.0"
+local URL_AIM = "https://raw.githubusercontent.com/Kcaptainoni/Autowalk/refs/heads/main/AimSlientv.10"
+local URL_PANEL = "https://raw.githubusercontent.com/Kcaptainoni/Autowalk/refs/heads/main/panelv1.0.lua"
+
+-- Helper fade utils
+local function prepCard(card)
+	card.BackgroundTransparency = 1
+	for _, d in ipairs(card:GetDescendants()) do
+		if d:IsA("TextLabel") or d:IsA("TextButton") then
+			d.TextTransparency = 1
+			d.BackgroundTransparency = 1
+		elseif d:IsA("ImageLabel") then
+			d.ImageTransparency = 1
+			d.BackgroundTransparency = 1
+		elseif d:IsA("UIStroke") then
+			d.Transparency = 1
+		end
+	end
+end
+
+local function tweenIn(card, time)
+	TweenService:Create(card, TweenInfo.new(time), {BackgroundTransparency = 0}):Play()
+	for _, d in ipairs(card:GetDescendants()) do
+		if d:IsA("TextLabel") or d:IsA("TextButton") then
+			TweenService:Create(d, TweenInfo.new(time), {TextTransparency = 0, BackgroundTransparency = 0}):Play()
+		elseif d:IsA("ImageLabel") then
+			TweenService:Create(d, TweenInfo.new(time), {ImageTransparency = 0, BackgroundTransparency = 0}):Play()
+		elseif d:IsA("UIStroke") then
+			TweenService:Create(d, TweenInfo.new(time), {Transparency = 0}):Play()
+		end
+	end
+	wait(time)
+end
+
+local function tweenOut(card, time)
+	TweenService:Create(card, TweenInfo.new(time), {BackgroundTransparency = 1}):Play()
+	for _, d in ipairs(card:GetDescendants()) do
+		if d:IsA("TextLabel") or d:IsA("TextButton") then
+			TweenService:Create(d, TweenInfo.new(time), {TextTransparency = 1, BackgroundTransparency = 1}):Play()
+		elseif d:IsA("ImageLabel") then
+			TweenService:Create(d, TweenInfo.new(time), {ImageTransparency = 1, BackgroundTransparency = 1}):Play()
+		elseif d:IsA("UIStroke") then
+			TweenService:Create(d, TweenInfo.new(time), {Transparency = 1}):Play()
+		end
+	end
+	wait(time)
+end
+
+-- Build GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "KcapCinematicIntro"
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local dim = Instance.new("Frame")
+dim.Size = UDim2.new(1, 0, 1, 0)
+dim.BackgroundColor3 = Color3.new(0, 0, 0)
+dim.BackgroundTransparency = 1
+dim.ZIndex = 0
+dim.Parent = gui
+
+local blur = Instance.new("BlurEffect")
+blur.Size = 0
+blur.Parent = Lighting
+
+-- Card 1: Made by
+local card1 = Instance.new("Frame")
+card1.Size = UDim2.new(0, 360, 0, 180)
+card1.Position = UDim2.new(0.5, 0, 0.5, 0)
+card1.AnchorPoint = Vector2.new(0.5, 0.5)
+card1.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+card1.BorderSizePixel = 0
+card1.Parent = gui
+Instance.new("UICorner", card1).CornerRadius = UDim.new(0, 8)
+local stroke1 = Instance.new("UIStroke", card1)
+stroke1.Thickness = 1
+stroke1.Color = Color3.fromRGB(80, 80, 80)
+stroke1.Transparency = 1
+
+local title1 = Instance.new("TextLabel", card1)
+title1.Size = UDim2.new(1, -40, 0, 60)
+title1.Position = UDim2.new(0, 20, 0, 20)
+title1.BackgroundTransparency = 1
+title1.Text = "Made by " .. MADE_BY
+title1.TextColor3 = Color3.new(1, 1, 1)
+title1.TextScaled = true
+
+local avatar = Instance.new("ImageLabel", card1)
+avatar.Size = UDim2.new(0, 80, 0, 80)
+avatar.Position = UDim2.new(0.5, -40, 0, 80)
+avatar.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+Instance.new("UICorner", avatar).CornerRadius = UDim.new(1, 0)
+
+task.spawn(function()
+	local ok, id = pcall(function() return Players:GetUserIdFromNameAsync(AVATAR_USER) end)
+	if ok and id then
+		local thumb, _ = Players:GetUserThumbnailAsync(id, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size180x180)
+		avatar.Image = thumb
+	end
+end)
+
+-- Card 2: Welcome
+local card2 = Instance.new("Frame")
+card2.Size = UDim2.new(0, 380, 0, 160)
+card2.Position = UDim2.new(0.5, 0, 0.5, 0)
+card2.AnchorPoint = Vector2.new(0.5, 0.5)
+card2.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+card2.BorderSizePixel = 0
+card2.Parent = gui
+Instance.new("UICorner", card2).CornerRadius = UDim.new(0, 8)
+local stroke2 = Instance.new("UIStroke", card2)
+stroke2.Thickness = 1
+stroke2.Color = Color3.fromRGB(80, 80, 80)
+stroke2.Transparency = 1
+
+local title2 = Instance.new("TextLabel", card2)
+title2.Size = UDim2.new(1, -40, 1, -40)
+title2.Position = UDim2.new(0, 20, 0, 20)
+title2.BackgroundTransparency = 1
+title2.Text = "Welcome " .. DISPLAY_NAME .. " to my script"
+title2.TextColor3 = Color3.new(1, 1, 1)
+title2.TextScaled = true
+
+-- Card 3: Select Client
+local card3 = Instance.new("Frame")
+card3.Size = UDim2.new(0, 460, 0, 200)
+card3.Position = UDim2.new(0.5, 0, 0.5, 0)
+card3.AnchorPoint = Vector2.new(0.5, 0.5)
+card3.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+card3.BorderSizePixel = 0
+card3.Parent = gui
+Instance.new("UICorner", card3).CornerRadius = UDim.new(0, 8)
+local stroke3 = Instance.new("UIStroke", card3)
+stroke3.Thickness = 1
+stroke3.Color = Color3.fromRGB(80, 80, 80)
+stroke3.Transparency = 1
+
+local header3 = Instance.new("TextLabel", card3)
+header3.Size = UDim2.new(1, -40, 0, 50)
+header3.Position = UDim2.new(0, 20, 0, 20)
+header3.BackgroundTransparency = 1
+header3.Text = "Select Client"
+header3.TextColor3 = Color3.new(1, 1, 1)
+header3.TextScaled = true
+
+local holder = Instance.new("Frame", card3)
+holder.Size = UDim2.new(1, -40, 1, -90)
+holder.Position = UDim2.new(0, 20, 0, 80)
+holder.BackgroundTransparency = 1
+
+local grid = Instance.new("UIGridLayout", holder)
+grid.CellSize = UDim2.new(0.5, -15, 0.5, -15)
+grid.CellPadding = UDim2.new(0, 10, 0, 10)
+
+local function createBtn(text)
+	local btn = Instance.new("TextButton")
+	btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	btn.Text = text
+	btn.TextColor3 = Color3.new(1, 1, 1)
+	btn.TextScaled = true
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+	btn.Parent = holder
+	return btn
+end
+
+local btnAuto = createBtn("Auto Walk")
+local btnAim = createBtn("Aim")
+local btnPanel = createBtn("Panel")
+local btnCancel = createBtn("Cancel")
+
+-- Prepare transparency
+prepCard(card1); prepCard(card2); prepCard(card3)
+
+-- Start cinematic flow
+TweenService:Create(dim, TweenInfo.new(0.4), {BackgroundTransparency = 0.3}):Play()
+TweenService:Create(blur, TweenInfo.new(0.4), {Size = BLUR_INTENSITY}):Play()
+
+tweenIn(card1, 0.45); wait(HOLD_MADE_BY); tweenOut(card1, 0.45)
+tweenIn(card2, 0.45); wait(HOLD_WELCOME); tweenOut(card2, 0.45)
+tweenIn(card3, 0.45)
+
+-- Close & launch helper
+local function closeAndLaunch(cb)
+	tweenOut(card3, 0.35)
+	TweenService:Create(dim, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
+	TweenService:Create(blur, TweenInfo.new(0.35), {Size = 0}):Play()
+	wait(0.35)
+	gui:Destroy()
+	blur:Destroy()
+	if type(cb) == "function" then cb() end
+end
+
+-- Button events
+btnAuto.MouseButton1Click:Connect(function()
+	closeAndLaunch(function()
+		pcall(function() loadstring(game:HttpGet(URL_AUTOWALK))() end)
+	end)
+end)
+
+btnAim.MouseButton1Click:Connect(function()
+	closeAndLaunch(function()
+		pcall(function() loadstring(game:HttpGet(URL_AIM))() end)
+	end)
+end)
+
+btnPanel.MouseButton1Click:Connect(function()
+	closeAndLaunch(function()
+		pcall(function() loadstring(game:HttpGet(URL_PANEL))() end)
+	end)
+end)
+
+btnCancel.MouseButton1Click:Connect(function()
+	closeAndLaunch()
+end)
