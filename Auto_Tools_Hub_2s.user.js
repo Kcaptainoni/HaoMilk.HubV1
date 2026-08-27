@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Auto Tools Hub — 2s
 // @namespace    http://tampermonkey.net/
-// @version      1.3.0-2s
+// @version      1.3.1-2s
 // @description  2s: tìm web + Continue + tab SITE2S tìm nút Lấy link (sau captcha)
 // @author       You
 // @match        *://*/*
@@ -77,6 +77,10 @@
     }
     function is2sFormPage() {
         return !!(document.querySelector('.keyword-container, #copyKeyword, span.keyword-highlight, img.guide-image'));
+    }
+    function isTraffic2sHost() {
+        const h = (location.hostname || '').toLowerCase();
+        return /traffic2s\.com|site2s\.com|2s\.com/i.test(h) || !!document.querySelector('.keyword-container, img.guide-image, #copyKeyword');
     }
     function markOriginIf2s() {
         try {
@@ -331,7 +335,6 @@
 
     // ========== Google: keyword search, match domain + best title ==========
     function openGoogleSearch(keyword, domainHint, titleHint, newTab) {
-        // Chỉ search ĐÚNG từ khóa (không nhét domain vào query — chọn kết quả bằng domain+title)
         const q = String(keyword || '').trim();
         const url = 'https://www.google.com/search?q=' + encodeURIComponent(q) + '&hl=vi';
         GM_setValue(STORE.keyword, keyword || '');
@@ -339,45 +342,65 @@
         GM_setValue(STORE.title, titleHint || '');
         GM_setValue(STORE.flowArmed, true);
         GM_setValue(STORE.flowTime, Date.now());
-        if (newTab) window.open(url, '_blank');
-        else location.href = url;
+        console.log('[2s] Mở Google:', q, '| domain=', domainHint, '| title=', (titleHint || '').slice(0, 40));
+        if (newTab) {
+            const w = window.open(url, '_blank');
+            if (!w) location.href = url;
+        } else {
+            location.href = url;
+        }
+    }
+
+    function resolveGoogleHref(a) {
+        let href = (a && (a.href || a.getAttribute('href'))) || '';
+        if (!href) return '';
+        try {
+            const u = new URL(href, location.href);
+            if (u.pathname === '/url') {
+                const q = u.searchParams.get('q') || u.searchParams.get('url');
+                if (q) return q;
+            }
+            return u.href;
+        } catch (e) { return href; }
     }
 
     function getGoogleResultCards() {
-        // Mỗi kết quả: { a, href, host, title }
         const cards = [];
         const seen = new Set();
-
-        // Cấu trúc SERP phổ biến
-        const blocks = $all('#search .g, #rso .g, #search [data-sokoban-container], #rso div[data-hveid]');
-        const pushFrom = (root) => {
-            const a = root.querySelector('a[href^="http"]') || root.querySelector('a[href]');
+        const push = (a, root) => {
             if (!a) return;
-            let href = a.href || '';
-            if (!href || /google\.|webcache|accounts\.google|youtube\.com\/results/i.test(href)) return;
-            let host = '';
-            try { host = new URL(href).hostname.replace(/^www\./, '').toLowerCase(); } catch (e) { return; }
+            const href = resolveGoogleHref(a);
+            if (!href || !/^https?:/i.test(href)) return;
+            if (/google\.|webcache|accounts\.google|maps\.google|youtube\.com\/results|policies\.google/i.test(href)) return;
             if (seen.has(href)) return;
             seen.add(href);
-
-            // Title: h3 ưu tiên
+            let host = '';
+            try { host = new URL(href).hostname.replace(/^www\./, '').toLowerCase(); } catch (e) { return; }
             let title = '';
-            const h3 = root.querySelector('h3') || a.querySelector('h3');
-            if (h3) title = (h3.textContent || '').trim();
-            if (!title) title = (a.textContent || '').trim();
-            if (!title || title.length < 3) return;
+            try {
+                const h3 = (root && root.querySelector('h3')) || a.querySelector('h3') || a.closest('div') && a.closest('div').querySelector('h3');
+                title = (h3 && h3.textContent) || a.textContent || '';
+            } catch (e) {}
+            title = String(title).replace(/\s+/g, ' ').trim();
+            if (title.length < 2) return;
             cards.push({ a, href, host, title });
         };
 
+        const blocks = $all('#search .g, #rso .g, #search [data-sokoban-container], #rso div[data-hveid], #search div[data-hveid]');
         if (blocks.length) {
-            blocks.forEach(pushFrom);
-        } else {
-            // fallback: mọi h3 > a
+            blocks.forEach(root => {
+                const a = root.querySelector('a[href^="http"]') || root.querySelector('a[href]');
+                push(a, root);
+            });
+        }
+        if (cards.length < 2) {
             $all('#search h3, #rso h3').forEach(h3 => {
                 const a = h3.closest('a') || (h3.parentElement && h3.parentElement.closest('a'));
-                if (!a) return;
-                pushFrom(a.closest('div') || a);
+                push(a, h3.closest('div') || a);
             });
+        }
+        if (cards.length < 1) {
+            $all('#search a[href], #rso a[href]').forEach(a => push(a, a));
         }
         return cards;
     }
@@ -387,19 +410,15 @@
         const hint = domainHint.toLowerCase().replace(/^www\./, '');
         const hostN = host.replace(/^www\./, '');
         if (hostN === hint) return 100;
-        // wildcard healt***.co
         if (/\*/.test(hint)) {
-            const parts = hint.split(/\*+/).filter(Boolean);
-            if (parts.every(p => hostN.includes(p.replace(/\./g, '')))) return 70;
-            // simpler: all non-* segments in host
             const segs = hint.split(/[^a-z0-9]+/).filter(s => s.length >= 2);
             let ok = 0;
             for (const s of segs) if (hostN.includes(s)) ok++;
-            if (segs.length && ok === segs.length) return 65;
+            if (segs.length && ok === segs.length) return 70;
             return Math.round((ok / Math.max(1, segs.length)) * 50);
         }
         if (hostN.endsWith('.' + hint) || hint.endsWith('.' + hostN)) return 80;
-        if (hostN.includes(hint) || hint.includes(hostN.split('.')[0])) return 40;
+        if (hostN.includes(hint.split('.')[0]) || hint.includes(hostN.split('.')[0])) return 45;
         return 0;
     }
 
@@ -411,20 +430,20 @@
         for (const c of cards) {
             const dScore = scoreDomain(c.host, domainHint);
             const tScore = titleHint ? titleSimilarity(c.title, titleHint) : 0;
-            // Bắt buộc ưu tiên title giống nhất trong các kết quả cùng domain tốt
-            // Tổng: domain quan trọng nhưng title quyết định khi domain tạm ổn
             let score = dScore * 1.2 + tScore;
-            if (dScore >= 40 && tScore >= 50) score += 30; // bonus khớp cả hai
-            if (dScore < 15 && domainHint) score *= 0.35; // domain lệch nặng → hạ
-            console.log('[2s] SERP', dScore, tScore, '→', Math.round(score), c.host, '|', c.title.slice(0, 50));
+            if (dScore >= 40 && tScore >= 40) score += 35;
+            if (dScore < 12 && domainHint) score *= 0.3;
+            if (!domainHint) score = Math.max(score, 20 + tScore * 0.5);
+            console.log('[2s] SERP', Math.round(dScore), Math.round(tScore), '→', Math.round(score), c.host, '|', c.title.slice(0, 45));
             if (score > bestScore) {
                 bestScore = score;
                 best = c;
             }
         }
-        // Ngưỡng tối thiểu
-        if (bestScore < 25) return null;
-        return best;
+        if (best && bestScore >= 18) return best;
+        // Fallback organic đầu
+        if (cards.length) return cards[0];
+        return null;
     }
 
     // ========== Extract value on target ==========
@@ -519,27 +538,61 @@
         if (!isGoogleHost()) return;
         const armed = GM_getValue(STORE.flowArmed, false);
         const ft = GM_getValue(STORE.flowTime, 0);
-        if (!armed || (ft && Date.now() - ft > 600000)) return;
+        if (!armed || (ft && Date.now() - ft > 600000)) {
+            console.log('[2s] Google: chưa armed hoặc hết hạn');
+            return;
+        }
 
         const domain = GM_getValue(STORE.domain, '');
         const title = GM_getValue(STORE.title, '');
-        console.log('[2s] Google match domain=', domain, 'title=', title);
+        console.log('[2s] Google auto-nav domain=', domain, 'title=', (title || '').slice(0, 40));
 
+        let tried = 0;
         const tryPick = () => {
+            tried++;
+            // Consent
+            try {
+                const consent = document.querySelector('#L2AGLb, button[aria-label*="Accept"], button[aria-label*="Chấp nhận"]');
+                if (consent) consent.click();
+            } catch (e) {}
+
             const best = pickGoogleResultBest(domain, title);
             if (!best) {
-                console.log('[2s] Chưa chọn được kết quả phù hợp');
+                console.log('[2s] Chưa có kết quả, thử lại', tried);
+                if (tried < 16) setTimeout(tryPick, 1000);
                 return false;
             }
-            console.log('[2s] CHỌN:', best.host, '|', best.title);
-            try { best.a.click(); } catch (e) {
-                try { location.href = best.href; } catch (e2) {}
-            }
+            console.log('[2s] VÀO:', best.host, best.href.slice(0, 80));
+            // Giữ armed để trang đích SITE2S tiếp tục; clear keyword time thôi không clear s2s
+            try {
+                // Không xóa flowArmed ngay — trang đích cần
+            } catch (e) {}
+            try {
+                best.a.scrollIntoView({ block: 'center' });
+            } catch (e) {}
+            try {
+                const r = best.a.getBoundingClientRect();
+                const x = r.left + r.width / 2, y = r.top + r.height / 2;
+                ['mousedown', 'mouseup', 'click'].forEach(type => {
+                    try {
+                        best.a.dispatchEvent(new MouseEvent(type, {
+                            bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0
+                        }));
+                    } catch (e) {}
+                });
+                best.a.click();
+            } catch (e) {}
+            setTimeout(() => {
+                if (/google\./i.test(location.hostname)) {
+                    try { location.href = best.href; } catch (e) {}
+                }
+            }, 1100);
             return true;
         };
 
-        setTimeout(() => { if (!tryPick()) setTimeout(tryPick, 2000); }, 1200);
-        setTimeout(tryPick, 3500);
+        setTimeout(tryPick, 1200);
+        setTimeout(tryPick, 2800);
+        setTimeout(tryPick, 5000);
     }
 
     // ========== Auto on target site ==========
@@ -878,8 +931,20 @@
     }
 
     function findSite2sButton() {
-        // Nút xanh SITE2S LẤY LINK NGAY (ảnh user)
-        const candidates = $all('a, button, div[role="button"], span, div');
+        // Không tìm trên trang hướng dẫn traffic2s / form 2s
+        if (isGoogleHost()) return null;
+        try {
+            const h = (location.hostname || '').toLowerCase();
+            if (/traffic2s\.com|site2s\.net/i.test(h)) return null;
+        } catch (e) {}
+        // Trang form nhiệm vụ (có keyword-highlight + guide-image) → đây là ví dụ, không phải nút thật
+        if (document.querySelector('.keyword-container, span.keyword-highlight') &&
+            document.querySelector('img.guide-image') &&
+            /traffic2s|site2s|Cuộn xuống cuối|LẤY LINK NGAY như thế này/i.test(document.body.innerText || '')) {
+            return null;
+        }
+
+        const candidates = $all('a, button');
         let best = null;
         let bestScore = 0;
         for (const el of candidates) {
@@ -887,21 +952,22 @@
                 if (el.closest && el.closest('#as2s-panel, #as2s-btn')) continue;
             } catch (e) {}
             const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
-            if (!t || t.length > 80) continue;
+            if (!t || t.length > 60) continue;
+            // Bỏ L4M / LẤY MÃ đỏ
+            if (/\bL4M\b|LẤY\s*MÃ|LAY\s*MA/i.test(t)) continue;
             let score = 0;
-            if (/SITE\s*2\s*S|SITE2S/i.test(t)) score += 40;
-            if (/LẤY\s*LINK\s*NGAY|LAY\s*LINK\s*NGAY|Lấy\s*link\s*ngay/i.test(t)) score += 35;
-            if (/LẤY\s*LINK|Lấy\s*link/i.test(t) && !/LẤY\s*MÃ|L4M/i.test(t)) score += 25;
-            // Tránh nút L4M đỏ
-            if (/L4M|LẤY\s*MÃ/i.test(t) && !/SITE2S|LẤY\s*LINK/i.test(t)) continue;
-            if (score < 25) continue;
+            if (/SITE\s*2\s*S|SITE2S/i.test(t)) score += 50;
+            if (/LẤY\s*LINK\s*NGAY|LAY\s*LINK\s*NGAY/i.test(t)) score += 40;
+            if (/LẤY\s*LINK|Lấy\s*link/i.test(t) && /SITE2S/i.test(t)) score += 20;
+            // Phải có SITE2S hoặc đủ cụm LẤY LINK NGAY
+            if (score < 40) continue;
             const r = el.getBoundingClientRect();
-            if (r.width < 8 || r.height < 8) continue;
-            // Ưu tiên nút/link thật
-            const target = el.closest('a, button') || el;
+            if (r.width < 20 || r.height < 12) continue;
+            // Ưu tiên có href / onclick
+            if (el.tagName === 'A' && el.href) score += 10;
             if (score > bestScore) {
                 bestScore = score;
-                best = target;
+                best = el;
             }
         }
         return best;
@@ -974,6 +1040,14 @@
     function runSite2sTick() {
         if (!s2sEnabled()) return;
         if (isGoogleHost()) return;
+        // Trang hướng dẫn 2s: không coi nút mẫu là đích
+        try {
+            if (/traffic2s\.com/i.test(location.hostname || '')) return;
+        } catch (e) {}
+        if (document.querySelector('.keyword-container') && document.querySelector('img.guide-image')) {
+            // Vẫn cho phép nếu domain không phải traffic2s (hiếm)
+            if (/Cuộn xuống cuối trang|LẤY LINK NGAY như thế này|Báo lỗi từ khóa/i.test(document.body.innerText || '')) return;
+        }
 
         const st = document.getElementById('as2s-s2s-status');
 
@@ -1074,10 +1148,12 @@
         GM_setValue(STORE.s2sEnabled, true);
         GM_setValue(STORE.s2sStep, 'search');
         GM_setValue(STORE.mission, 'site2s_button');
+        GM_setValue(STORE.flowArmed, true);
+        GM_setValue(STORE.flowTime, Date.now());
         updateS2sSwitchUI();
         startSite2sWatcher();
 
-        setSt('Google: ' + keyword + ' | ' + (domain || '') + ' | ' + (title || '').slice(0, 30));
+        setSt('Google → tự vào web: ' + keyword + ' | ' + (domain || '') + ' | ' + (title || '').slice(0, 30));
         openGoogleSearch(keyword, domain, title, !!newTab);
     }
 
